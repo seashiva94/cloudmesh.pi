@@ -1,133 +1,102 @@
-class Dendrite(object):
-    def __init__(self, pin=4):
-        """
-        connect to digital pin. default is D4.
-        :param pin: Integer
-        """
-        self.last = None
-        self.pin = pin
-        self.relay = Relay(pin=self.pin)
+import time
+import sys
+import grovepi
+from thread import start_new_thread
 
-    def react_and_wait(self, on=2.5, relax=30):
-        """
-        causes dendrite to react. current flows for 'on' seconds and relaxes for 'off' seconds.
-        :param on: Number
-        :param relax: Number
-        :return: None
-        """
-        self.last = time.time()
-        self.relay.on()
-        time.sleep(on)
-        self.relay.off()
-        time.sleep(relax)
+states = {"FREE" :0, "RECOVERING" :1, "WORKING":2}
 
+class Dendrite:
+	def __init__(self, pin = 3, recovery_time = 20):
+		"""
+		initialise dendrite with pin and recovery time
+		pin = 3 by default, connect relay to port D3 of grovepi
+		connect the dendrite to the battery via the relay
+		recovery_time = 20 seconds by default
+		time taken by dendrite to regain its shape  after current is turned off
+		"""
 
-    def react(self, on=2.5, relax=30):
-        """
-        causes dendrite to react. current flows for 'on' seconds and relaxes for 'off' seconds.
-        Will only react if ready.
-        :param on: Number
-        :param relax: Number
-        :return: None
-        """
-        if self.ready(relax):
-            self.last = time.time()
-            self.relay.on()
-            time.sleep(on)
-            self.relay.off()
+		self.dendrite = pin
+		self.recovery_time = recovery_time
+		grovepi.pinMode(self.dendrite,"OUTPUT")
+		self.setState(states["FREE"])
+		print "INIT"
 
-    def ready(self, delta=30):
-        """
-        returns True if dendrite has relaxed for 'delta' seconds. False otherwise. 30 seconds default.
-        :param delta: Number
-        :return: Boolean
-        """
-        t = time.time()
-        return t - self.last >= delta
+	def recover(self):
+		"""
+		once the current is turned off, do not turn on until after recovery_time
+		"""
+		print "recovering"
+		time.sleep(self.recovery_time)
+		print "recovered"
+		self.setState(states["FREE"])
 
+	def on(self):
+		"""
+		turn on the relay to allow current to flow through the dendrite
+		if the dendrite is already in ON state, no point in trying to turn on again
+		if the dendrite is recovering, do not try to turn on the relay
+		"""
+		print "ON called at state", self.state
+		if self.state == states["FREE"]:
+			self.setState(states["WORKING"])
+			grovepi.digitalWrite(self.dendrite,1)
+		else:
+			print "BUSY"
 
+	def off(self):
+		"""
+		turn the relay off to allow dendrite to recover to original configuration
+		if the denrite has already recovered or is recovering, do not turn off
+		"""
 
-class DendriteSwarm(object):
+		print "OFF called at state", self.state
 
-    def __init__(self, pins=[4, 4]):
-        """
-        dendrite swarm connected to digital ports. D4 and D4 are the defaults.
-        :param pins: ListOfIntegers
-        """
-        self.last = None
-        self.pins = pins
-        self.relays = []
-        for pin in pins:
-            self.relays.append(Relay(pin=pin))
+		grovepi.digitalWrite(self.dendrite,0)
+		if self.state == states["WORKING"]:
+			self.setState(states["RECOVERING"])
+			start_new_thread(self.recover,())
+		else:
+			print "RELAXING"
 
-    def dance(self, on=2.5, relax=30, delta=[0, 1]):
-        """
-        causes dendrites to activate for 'on' seconds. all relax for 'relax' seconds.
-        stagger reactions by 'delta' seconds.
-        :param on: Number
-        :param relax: Number
-        :param delta: ListOfNumbers
-        :return:
-        """
+	def setState(self,state):
+		"""
+		set the state of the dendrite
+		state = 0 means FREE i.e. the dendrite is not ON and is not recovering and relay can be switched on
+		state = 1 means WORKING i.e. the relay is  ON and dendrite is getting heated
+		state = 2 means RECOVERING i.e. the relay is OFF and dendrite is trying to recover to its original shape
 
-        self.last = time.time()
+		to set these states a global states dictionary is used here
+		"""
 
-        i = 0
-        for relay in self.relays:
-            time.sleep(delta[i])
-            relay.on()
-            i = i + 1
-
-        time.sleep(on)
-
-        i = 0
-        for relay in self.relays:
-            time.sleep(delta[i])
-            relay.off()
-            i = i + 1
-
-
-    def react(self, on=2.5, relax=30):
-        """
-        All dendrites react. On for 'on' seconds. Relax for 'relax' seconds.
-        :param on: Integer
-        :param relax: Integer
-        :return: None
-        """
-        if self.ready(relax):
-            self.last = time.time()
-
-            for relay in self.relays:
-                relay.on()
-
-            time.sleep(on)
-
-            for relay in self.relays:
-                relay.off()
-
-
-    def ready(self, delta):
-        """
-        returns whether or not the dendrite has relaxed for long enough
-        :param delta: Number
-        :return: Boolean
-        """
-        t = time.time()
-        if self.last is None:
-            return True
-        else:
-            return t - self.last >= delta
-
-
+		self.state = state
+		print "state =" ,state
 
 
 if __name__ == "__main__":
+	if len(sys.argv) < 2:
+		print "Error"
+		print "usage: dendrite_test.py <heating time in seconds>"
+		print "using heat time of 0.5 seconds"
+		heat_time = 0.5
+	else:
+		heat_time = float(sys.argv[1])
 
-    d1 = Dendrite(pin=4)
-    d2 = Dendrite(pin=2)
-    d1.react(on=2, relax=30)
-    d2.react(on=2, relax=30)
+	dendrite0 = Dendrite(pin=2, recovery_time = 10)
+	dendrite1 = Dendrite(pin=4, recovery_time = 10)
+	dendrite2 = Dendrite(pin=6, recovery_time = 10)
+	dendrite3 = Dendrite(pin=8, recovery_time = 10)
 
-    print('done')
+	dendrites = [dendrite0, dendrite1, dendrite2, dendrite3]
 
-    # TODO add Dendrite swarm example
+	msg = "ON ON ON ON"
+	m_list = msg.split(" ")
+	for i in range(len(dendrites)):
+		if  m_list[i] == "ON":
+			dendrites[i].on()
+		else:
+			dendrites[i].off()
+
+	time.sleep(heat_time)
+	for dendrite in dendrites:
+		dendrite.off()
+
