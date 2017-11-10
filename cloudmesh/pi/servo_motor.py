@@ -14,20 +14,20 @@ class Servo:
 		"""
 		set the motor in zero degree position
 		"""
-		grovepi.analogWrite(self.servo, 64)
+		grovepi.analogWrite(self.servo, 0)
 
 	def setNeutral(self):
 		"""
 		set the motor in neutral position
 		"""
-		dc = 0
+		dc = 192
 		grovepi.analogWrite(self.servo, dc)
 
 	def setFull(self):
 		"""
 		set the motor in 90 degrees position
 		"""
-		dc = 200
+		dc = 222
 		grovepi.analogWrite(self.servo, dc)
 
 
